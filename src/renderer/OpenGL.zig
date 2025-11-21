@@ -169,6 +169,23 @@ pub fn surfaceInit(surface: *apprt.Surface) !void {
         apprt.gtk,
         => try prepareContext(null),
 
+        apprt.windows,
+        => try prepareContext(struct {
+            pub fn getProcAddress(name: [:0]const u8) ?*anyopaque {
+                const internal_os = @import("../os/main.zig");
+                const win32 = internal_os.windows.exp;
+                const windows = std.os.windows;
+
+                if (win32.opengl32.wglGetProcAddress(name.ptr)) |proc| return proc;
+
+                const hmod = win32.kernel32.GetModuleHandleW(&std.unicode.utf8ToUtf16LeStringLiteral("opengl32.dll"));
+                if (hmod) |mod| {
+                    return windows.kernel32.GetProcAddress(mod, name.ptr);
+                }
+                return null;
+            }
+        }.getProcAddress),
+
         apprt.embedded => {
             // TODO(mitchellh): this does nothing today to allow libghostty
             // to compile for OpenGL targets but libghostty is strictly
@@ -208,6 +225,16 @@ pub fn threadEnter(self: *const OpenGL, surface: *apprt.Surface) !void {
             // on the main thread. As such, we don't do anything here.
         },
 
+        apprt.windows => {
+            const s = @as(*apprt.windows.Surface, @ptrCast(@alignCast(surface)));
+            if (s.hglrc) |hglrc| {
+                if (s.hdc) |hdc| {
+                    const internal_os = @import("../os/main.zig");
+                    _ = internal_os.windows.exp.opengl32.wglMakeCurrent(hdc, hglrc);
+                }
+            }
+        },
+
         apprt.embedded => {
             // TODO(mitchellh): this does nothing today to allow libghostty
             // to compile for OpenGL targets but libghostty is strictly
@@ -226,6 +253,11 @@ pub fn threadExit(self: *const OpenGL) void {
         apprt.gtk => {
             // We don't need to do any unloading for GTK because we may
             // be sharing the global bindings with other windows.
+        },
+
+        apprt.windows => {
+            const internal_os = @import("../os/main.zig");
+            _ = internal_os.windows.exp.opengl32.wglMakeCurrent(null, null);
         },
 
         apprt.embedded => {
@@ -328,6 +360,16 @@ pub fn present(self: *OpenGL, target: Target) !void {
 
     // Keep track of this target in case we need to repeat it.
     self.last_target = target;
+
+    switch (apprt.runtime) {
+        apprt.windows => {
+            const internal_os = @import("../os/main.zig");
+            if (internal_os.windows.exp.opengl32.wglGetCurrentDC()) |hdc| {
+                _ = internal_os.windows.exp.gdi32.SwapBuffers(hdc);
+            }
+        },
+        else => {},
+    }
 }
 
 /// Present the last presented target again.
