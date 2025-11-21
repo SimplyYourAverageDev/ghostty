@@ -570,6 +570,13 @@ jobs:
         shell: pwsh
         run: Get-Content -Path ".\build.log"
 
+      - name: Upload Artifact
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: ghostty-windows
+          path: zig-out/bin/ghostty.exe
+          if-no-files-found: ignore
+
   test:
     if: github.repository == 'ghostty-org/ghostty'
     runs-on: namespace-profile-ghostty-md
